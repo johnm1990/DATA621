@@ -1,0 +1,288 @@
+---
+title: "Untitled"
+author: "John M"
+date: "10/26/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries & reading data}
+
+if (!require("ggplot2",character.only = TRUE)) (install.packages("ggplot2",dep=TRUE))
+if (!require("MASS",character.only = TRUE)) (install.packages("MASS",dep=TRUE))
+if (!require("knitr",character.only = TRUE)) (install.packages("knitr",dep=TRUE))
+if (!require("xtable",character.only = TRUE)) (install.packages("xtable",dep=TRUE))
+if (!require("dplyr",character.only = TRUE)) (install.packages("dplyr",dep=TRUE))
+if (!require("psych",character.only = TRUE)) (install.packages("psych",dep=TRUE))
+if (!require("stringr",character.only = TRUE)) (install.packages("stringr",dep=TRUE))
+if (!require("car",character.only = TRUE)) (install.packages("car",dep=TRUE))
+if (!require("e1071",character.only = TRUE)) (install.packages("e1071",dep=TRUE))
+if (!require("ROCR",character.only = TRUE)) (install.packages("ROCR",dep=TRUE))
+#if (!require("faraway",character.only = TRUE)) (install.packages("faraway",dep=TRUE))
+
+library(ggplot2)
+library(MASS)
+library(knitr)
+library(xtable)
+library(dplyr)
+library(psych)
+library(stringr)
+library(car)
+library(caret)
+library(e1071)
+library(ROCR)
+#library(faraway)
+
+library(tidyverse)
+library(dplyr)
+
+crime_eval_df <- read.csv("https://raw.githubusercontent.com/johnm1990/DATA621/main/hw3/crime-evaluation-data_modified.csv")
+crime_train_df <- read.csv("https://raw.githubusercontent.com/johnm1990/DATA621/main/hw3/crime-training-data_modified.csv")
+
+```
+
+Intro: 
+
+
+```{r section1}
+# create summaries for every variable showing basic summaries + NAs
+### add the standard deviations to our summaries
+summary(crime_train_df)
+# Scatterplots between the independednt variables and the # wins
+# ggplot(data = crime_train_df) +
+#   geom_point(mapping = aes(x = , y= target))
+
+##matrix of scatterplots
+
+###Change the scale
+# Simple Bar Plot, adjust the scale of the bar plot
+counts <- table(crime_train_df$target)
+barplot(counts, main="Crime Distribution", 
+   xlab="Number of Neighborhoods")
+
+#scatterpltos for the target and predictors
+pairs(~target + dis +  lstat + ptratio ,
+      pch = 19, data = crime_train_df)
+
+```
+
+```{r section 2}
+#tax is very notable and makes sense to transforming, we do a log transformation, min 187 value, max 711
+#this will go into our log_tax
+crime_train_df$log_tax <- log(crime_train_df$tax)
+##summary(crime_train_df)
+
+#crime_train_df$chas <-  as.factor(crime_train_df$chas)
+#crime_train_df$target <-  as.factor(crime_train_df$target)
+
+
+crime_train_df$statbuk <- as.numeric(cut_number(crime_train_df$lstat,5))
+table(crime_train_df$statbuk)
+
+#check if high SDs, then transform
+apply(crime_train_df,2,sd)
+summary(crime_train_df)
+
+#ZN has high standard deviation, considering the fact that the range of the values is not that huge
+#this makes it a high candidate for transformation since high SD
+
+#standard deviation says, that the average deviation of all the values from the mean, 
+# for example looking at indus, mean is 11.105, the average deviation from the mean is 6.84 and whole range of values is between 0.4 to 27
+# this allows us to see "how spaced out our values are"
+
+# the variables for example age is understandable to have high SD, age is spaced out generally
+
+#if we do regression coefficient, for age, we could say as age increase by 1 year, the crime will increase by X units
+
+#transforming variables come with a cost, unless their is a clear need, we should always be conserative. As to not effect interpretability
+
+#looking at RAD we have relatively big standard deviation, range of values from 1 min to 24 max.
+
+
+
+
+## among the candidates, for transformation, we see medv, zn, indus, rad
+## we always must bear in mind, if we transform the variables, the way to interpret the coefficients will be different when we do our regression model
+
+```
+Many types of statistical data exhibit a "variance-on-mean relationship", meaning that the variability is different for data values with different expected values. The log transformation can be used to make highly skewed distributions less skewed. This can be valuable both for making patterns in the data more interpretable and for helping to meet the assumptions of inferential statistics.
+
+A variance-stabilizing transformation aims to remove a variance-on-mean relationship, so that the variance becomes constant relative to the mean. Examples of variance-stabilizing transformations are the Fisher transformation for the sample correlation coefficient, the square root transformation or Anscombe transform for Poisson data (count data), the Box–Cox transformation for regression analysis, and the arcsine square root transformation or angular transformation for proportions (binomial data). While commonly used for statistical analysis of proportional data, the arcsine square root transformation is not recommended because logistic regression or a logit transformation are more appropriate for binomial or non-binomial proportions, respectively, especially due to decreased type-II error
+
+```{r}
+
+#transform into logs for high standard deviation
+crime_train_df$zn_log <- log(crime_train_df$zn)
+crime_train_df$rad_log <- log(crime_train_df$rad)
+
+##INDUS compared to RAD has a higher range, however RAD has higher standard deviation than INDUS
+```
+
+For the first model we can utilize all the explanatory variables we have.This is what differentiates a logistic regression from a linear model regression, we must specify family = binomial, this means our target variables is a binomial variable, which takes 0 or 1, it is not a continous variable
+
+Logistic regression is a method for fitting a regression curve, y = f(x), when y is a categorical variable. The typical use of this model is predicting y given a set of predictors x. The predictors can be continuous, categorical or a mix of both.
+
+The categorical variable y, in general, can assume different values. In the simplest case scenario y is binary meaning that it can assume either the value 1 or 0. In this example used in for our classification assignment each record has a response variable indicative of whether or not the crime rate is above the median crime rate (1) or not (o)
+
+we call the model “binomial logistic regression”, since the variable to predict is binary
+
+
+## You can't have factor/categorical response variables when using GLM apparently
+
+##we have variables that are perfectly correlated, like tax and log_tax, if we include this, we have multicolinearity. our first model is without our transformations
+
+The Akaike information criterion (AIC) is an estimator of prediction error and thereby relative quality of statistical models for a given set of data. Given a collection of models for the data, AIC estimates the quality of each model, relative to each of the other models.
+
+The AIC function is 2K – 2(log-likelihood). Lower AIC values indicate a better-fit model, and a model with a delta-AIC (the difference between the two AIC values being compared) of more than -2 is considered significantly better than the model it is being compared to.
+
+```{r Model building}
+# model 1: All variables in original units
+crime_train_df_ori <- crime_train_df[,1:13]
+crime_model1 <- glm(as.numeric(target) ~ ., data = crime_train_df_ori, family = "binomial")
+summary(crime_model1)
+
+
+#
+```
+
+Forward selection means that we are going to start with the variable that has the most significance on our response variable in the first round, then add second, third and so on. Until we stop at the point where adding more variables and it doesn't improve models performance
+
+Backward selection is the reverse, we start with a full model and then we take off variables from the model, starting with variable with least significance til we reach the performance we aimed for. 
+
+The higher the P value is the more significant it is on the target variable. In this case If neighborhood is above median crime rate of the city. 
+Highest p value = lowest significance, we can take these out little by little until the model improves. We do this until we take out variables and we notice reduction in performance of our model
+
+
+
+```{r Model building}
+#use dataframe that has the transformations, but used the log transformations that were created. Assume these variables have high standard deviation, this may have caused impact on our results. We usually start with all our desired variables, and remove the ones
+
+#couldn't use zn_log, min = -Inf, may be because of several 0 values (use summary to troubleshoot issues)
+
+#we can "play around" by inserting, taking out variables to see performance change
+
+#model 2: all variables with log transformation for tax and rad
+crime_model2 <- glm(as.numeric(target) ~ zn+indus+chas+nox+rm+age+dis+rad_log+log_tax+ptratio+lstat+medv, data = crime_train_df, family = "binomial")
+summary(crime_model2)
+```
+High p-values indicate that your evidence is not strong enough to suggest an effect exists in the population. An effect might exist but it's possible that the effect size is too small, the sample size is too small, or there is too much variability for the hypothesis test to detect it.
+
+Notice, chas1 is a dummy variable
+
+```{r Model building}
+#model 3: Backward selection, removing variables one by one based on the p-value
+crime_model3 <- glm(as.numeric(target) ~ zn+nox+age+dis+rad+tax+ptratio+medv, data = crime_train_df, family = "binomial")
+summary(crime_model3)
+
+#the less variables in the model, the better. We are reducing the number of variables and getting better quality. We #keep removing the variables with highest p-value
+#we reach a point where our model includes only all significant variables. no need to remove any other variable
+
+#if we were to keep removing variables unnecessarily, this will negatively impact our quality performance
+```
+Notice the estimates above. The coefficients, for example if it has variables that the coefficients are not intuitive in the model, like tax, it has negative effect on crime rate. Tax has marginal effect on crime. Sometimes we should keep some margin for data to change our views. Get insights out of our data. 
+
+********* 
+logistic regression models interpretation:
+if NOX increases by 1 unit, the likelihood of an neighborhood to be above  the median increase by 42%
+
+if every 1 year of age increase will increase the likelihood of neighborhood being above the median crime rate .031%
+
+if increase of $1 dollar of tax will decrease the likelihood of neighborhood to be above the median crime rate .008%
+dispute it's low in magnitude, it's high in significance, we are sure of that it has en effect, small effect, but we are sure of it
+*******
+
+
+4. SELECT MODELS (25 Points) 
+ 
+Decide on the  criteria  for selecting  the best  binary  logistic  regression  model.  Will you  select  models  with  slightly 
+worse performance if it makes more sense or is more parsimonious? Discuss why you selected your models.  
+ 
+For the binary logistic regression model, will you use a metric such as log likelihood, AIC, ROC curve, etc.? Using 
+the training data set, evaluate the binary logistic regression model based on (a) accuracy, (b) classification error 
+rate, (c) precision, (d) sensitivity, (e) specificity, (f) F1 score, (g) AUC, and (h) confusion matrix. Make predictions 
+using the evaluation data set.
+
+Whether or not crime rate of neighborhoods are above or below the median. We will pick the model with best performance. Even if some of the coefficients were counter-intuitive, then this is insightful in some sense. That we expect is not what we are seeing. Given that all the variables in our backward selection model are significant, and the model itself is the best in performance. We didn't use as many variables as the full model, however all the variables in our model are proven significant. For the binary logistic regression we chose(crime_model_3), we utilized the AIC to evaluate the models performance. The model we chose was the model with least AIC, 215.32.   
+
+Accuracy means the total number of correctly predicted outcomes over total number of predictions. 
+The default value for the threshold is 0.5 for normalized predicted probabilities or scores in the range between 0 or 1.
+
+We start with our confusion matrix. Confusion matrix shows us Predicted as 0 and was 0 or Predicted as 1 and was 1. 
+
+Two indices are used to evaluate the accuracy of a test that predicts dichotomous outcomes ( e.g. logistic regression) - sensitivity and specificity. They describe how well a test discriminates between cases with and without a certain condition.
+
+    Sensitivity - the proportion of true positives or the proportion of cases correctly identified by the test as meeting a certain condition.
+
+    Specificity - the proportion of true negatives or the proportion of cases correctly identified by the test as not meeting a certain condition.
+
+
+The F1 score can be interpreted as a harmonic mean of the precision and recall, where an F1 score reaches its best value at 1 and worst score at 0. The relative contribution of precision and recall to the F1 score are equal. The formula for the F1 score is:
+
+F1 = 2 * (precision * recall) / (precision + recall)
+
+
+```{r}
+
+
+threshold=0.5
+predicted_values<-ifelse(predict(crime_model3,type="response")>threshold,1,0)
+actual_values<-crime_model3$y
+conf_matrix<-table(predicted_values,actual_values)
+conf_matrix
+
+
+
+
+sensitivity(conf_matrix)
+specificity(conf_matrix)
+result<-confusionMatrix(conf_matrix)
+
+
+
+
+
+
+precision <- result$byClass['Pos Pred Value']
+precision
+
+class_error_rate <- 1-result$overall['Accuracy']
+class_error_rate
+
+f1 <- result$byClass['F1']
+f1
+
+```
+
+
+
+
+
+
+```{r}
+p <- predict(crime_model3, type = "response")
+roc_pred <- prediction(predictions = p,labels=crime_model3$y)
+
+auc.tmp <- performance(roc_pred,"auc"); auc <- as.numeric(auc.tmp@y.values)
+auc
+
+#plotting roc
+roc_perf <- performance(roc_pred , "tpr" , "fpr")
+plot(roc_perf,
+     colorize = TRUE,
+     print.cutoffs.at= seq(0,1,0.05),
+     text.adj=c(-0.2,1.7))
+
+
+
+threshold=0.5
+crime_eval_df$target<-ifelse(predict(crime_model3,crime_eval_df,type="response")>threshold,1,0)
+
+
+```
+
+
+
+
